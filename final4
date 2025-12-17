@@ -1,0 +1,174 @@
+import tkinter as tk
+from tkinter import ttk, messagebox
+from sqlalchemy import create_engine, Column, Integer, String
+from sqlalchemy.orm import sessionmaker, declarative_base
+
+# ------------------------ مدل (Model) ------------------------
+Base = declarative_base()
+
+class Student(Base):
+    __tablename__ = 'students'
+    id = Column(Integer, primary_key=True)
+    firstname = Column(String(50))
+    lastname = Column(String(50))
+    age = Column(Integer)
+
+# ------------------------ دیتابیس ------------------------
+DATABASE_URI = 'mysql+pymysql://root:1234@localhost/school_ab'
+engine = create_engine(DATABASE_URI, echo=False)
+Base.metadata.create_all(engine)
+Session = sessionmaker(bind=engine)
+session = Session()
+
+# ------------------------ کنترلر (Controller) ------------------------
+class StudentController:
+    def add_student(self, firstname, lastname, age):
+        new_student = Student(firstname=firstname, lastname=lastname, age=age)
+        session.add(new_student)
+        session.commit()
+
+    def update_student(self, student_id, firstname, lastname, age):
+        student = session.query(Student).filter_by(id=student_id).first()
+        if student:
+            student.firstname = firstname
+            student.lastname = lastname
+            student.age = age
+            session.commit()
+
+    def delete_student(self, student_id):
+        student = session.query(Student).filter_by(id=student_id).first()
+        if student:
+            session.delete(student)
+            session.commit()
+
+    def get_all_students(self):
+        return session.query(Student).all()
+
+# ------------------------ ویو (View) ------------------------
+class StudentView:
+    def __init__(self, root):
+        self.controller = StudentController()
+        self.root = root
+        self.root.title("مدیریت دانش‌آموزان")
+
+        # فریم ورودی داده‌ها
+        frame_input = tk.Frame(root)
+        frame_input.pack(pady=10)
+
+        tk.Label(frame_input, text="نام:").grid(row=0, column=0, padx=5)
+        self.firstname_entry = tk.Entry(frame_input)
+        self.firstname_entry.grid(row=0, column=1, padx=5)
+
+        tk.Label(frame_input, text="نام خانوادگی:").grid(row=0, column=2, padx=5)
+        self.lastname_entry = tk.Entry(frame_input)
+        self.lastname_entry.grid(row=0, column=3, padx=5)
+
+        tk.Label(frame_input, text="سن:").grid(row=0, column=4, padx=5)
+        self.age_entry = tk.Entry(frame_input, width=5)
+        self.age_entry.grid(row=0, column=5, padx=5)
+
+        # دکمه‌ها
+        frame_buttons = tk.Frame(root)
+        frame_buttons.pack(pady=10)
+
+        self.add_btn = tk.Button(frame_buttons, text="افزودن", width=12, command=self.add_student)
+        self.add_btn.pack(side=tk.LEFT, padx=5)
+
+        self.update_btn = tk.Button(frame_buttons, text="بروزرسانی", width=12, command=self.update_student)
+        self.update_btn.pack(side=tk.LEFT, padx=5)
+
+        self.delete_btn = tk.Button(frame_buttons, text="حذف", width=12, command=self.delete_student)
+        self.delete_btn.pack(side=tk.LEFT, padx=5)
+
+        # Treeview نمایش دانش آموزان
+        columns = ("id", "firstname", "lastname", "age")
+        self.tree = ttk.Treeview(root, columns=columns, show="headings")
+        self.tree.heading("id", text="شناسه")
+        self.tree.column("id", width=50)
+        self.tree.heading("firstname", text="نام")
+        self.tree.heading("lastname", text="نام خانوادگی")
+        self.tree.heading("age", text="سن")
+        self.tree.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
+
+        # انتخاب ردیف
+        self.tree.bind("<<TreeviewSelect>>", self.on_tree_select)
+
+        self.load_students()
+
+    def load_students(self):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        students = self.controller.get_all_students()
+        for stu in students:
+            self.tree.insert("", tk.END, values=(stu.id, stu.firstname, stu.lastname, stu.age))
+
+    def clear_entries(self):
+        self.firstname_entry.delete(0, tk.END)
+        self.lastname_entry.delete(0, tk.END)
+        self.age_entry.delete(0, tk.END)
+
+    def add_student(self):
+        firstname = self.firstname_entry.get().strip()
+        lastname = self.lastname_entry.get().strip()
+        age = self.age_entry.get().strip()
+
+        if not firstname or not lastname or not age.isdigit():
+            messagebox.showerror("خطا", "لطفا اطلاعات معتبر وارد کنید")
+            return
+
+        self.controller.add_student(firstname, lastname, int(age))
+        self.load_students()
+        self.clear_entries()
+        messagebox.showinfo("موفق", "دانش‌آموز اضافه شد")
+
+    def update_student(self):
+        selected = self.tree.focus()
+        if not selected:
+            messagebox.showerror("خطا", "لطفا یک دانش‌آموز انتخاب کنید")
+            return
+
+        student_id = self.tree.item(selected)['values'][0]
+        firstname = self.firstname_entry.get().strip()
+        lastname = self.lastname_entry.get().strip()
+        age = self.age_entry.get().strip()
+
+        if not firstname or not lastname or not age.isdigit():
+            messagebox.showerror("خطا", "لطفا اطلاعات معتبر وارد کنید")
+            return
+
+        self.controller.update_student(student_id, firstname, lastname, int(age))
+        self.load_students()
+        self.clear_entries()
+        messagebox.showinfo("موفق", "اطلاعات دانش‌آموز بروزرسانی شد")
+
+    def delete_student(self):
+        selected = self.tree.focus()
+        if not selected:
+            messagebox.showerror("خطا", "لطفا یک دانش‌آموز انتخاب کنید")
+            return
+
+        res = messagebox.askyesno("تایید حذف", "آیا مطمئن هستید؟")
+        if res:
+            student_id = self.tree.item(selected)['values'][0]
+            self.controller.delete_student(student_id)
+            self.load_students()
+            self.clear_entries()
+            messagebox.showinfo("موفق", "دانش‌آموز حذف شد")
+
+    def on_tree_select(self, event):
+        selected = self.tree.focus()
+        if selected:
+            values = self.tree.item(selected)['values']
+            self.firstname_entry.delete(0, tk.END)
+            self.firstname_entry.insert(0, values[1])
+            self.lastname_entry.delete(0, tk.END)
+            self.lastname_entry.insert(0, values[2])
+            self.age_entry.delete(0, tk.END)
+            self.age_entry.insert(0, values[3])
+
+# ------------------------ اجرای برنامه ------------------------
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = StudentView(root)
+    root.geometry("600x400")
+    root.mainloop()
